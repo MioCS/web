@@ -10,7 +10,8 @@ import (
 	"log"
 	"net/http"
 	"regexp"
-	"time"
+	"web/session"
+	_ "web/session/memory"
 )
 
 type UserInfo struct {
@@ -19,6 +20,7 @@ type UserInfo struct {
 	password string
 }
 
+// validation
 func (userInfo *UserInfo) signinInfoCheck() error {
 	if len(userInfo.account) == 0 {
 		return errors.New("Username shoudn't be empty!")
@@ -84,36 +86,38 @@ func (userInfo *UserInfo) signupInfoCheck() error {
 	}
 }
 
+var manager, _ = session.NewManager("memory", "login", 100)
+
+// request handle
 func signinHandle(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("signin process")
-	fmt.Println("method:", r.Method) //获取请求的方法
+	fmt.Println("method:", r.Method)
 	if r.Method == "GET" {
 		t, _ := template.ParseFiles("login.gtpl")
 		t.Execute(w, nil)
 	} else {
-		fmt.Println("cookies")
-		if len(r.Cookies()) == 0 {
-			expiration := time.Now()
-			expiration = expiration.AddDate(1, 0, 0)
-			cookie := http.Cookie{Name: "username", Value: "astaxie", Expires: expiration}
-			http.SetCookie(w, &cookie)
-		} else {
-			for _, cookie := range r.Cookies() {
-				fmt.Println(cookie.Name)
-			}
-		}
-		fmt.Println("cookies over")
-
-		//请求的是登陆数据，那么执行登陆的逻辑判断
 		r.ParseForm()
 		userInfo := UserInfo{"", r.Form["account"][0], r.Form["password"][0]}
-		err := userInfo.signinInfoCheck()
-		if err != nil {
-			fmt.Fprintln(w, err.Error())
+		cookie, err := r.Cookie("login")
+		var count = 0
+		if err != nil || cookie.Value == "" {
+			err := userInfo.signinInfoCheck()
+			if err != nil {
+				fmt.Fprintln(w, err.Error())
+			} else {
+				sess := manager.SessionStart(w, r)
+				sess.Set("count", 1)
+				count = 1
+				fmt.Fprintln(w, "Signin success!")
+			}
 		} else {
+			sess := manager.SessionStart(w, r)
+			count = sess.Get("count").(int)
+			count++
+			sess.Set("count", count)
 			fmt.Fprintln(w, "Signin success!")
 		}
-
+		fmt.Println("count:", count)
 		fmt.Println("account:", r.Form["account"])
 		fmt.Println("password:", r.Form["password"])
 	}
@@ -121,7 +125,7 @@ func signinHandle(w http.ResponseWriter, r *http.Request) {
 
 func signupHandle(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("signup process")
-	fmt.Println("method:", r.Method) //获取请求的方法
+	fmt.Println("method:", r.Method)
 	if r.Method == "GET" {
 		t, _ := template.ParseFiles("login.gtpl")
 		t.Execute(w, nil)
@@ -144,7 +148,7 @@ func signupHandle(w http.ResponseWriter, r *http.Request) {
 func main() {
 	http.HandleFunc("/signin", signinHandle)
 	http.HandleFunc("/signup", signupHandle)
-	err := http.ListenAndServe(":9090", nil) //设置监听的端口
+	err := http.ListenAndServe(":9090", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}

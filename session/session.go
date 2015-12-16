@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,15 +17,6 @@ type Manager struct {
 	lock        sync.Mutex
 	provider    Provider
 	maxLifeTime int64
-}
-
-func NewManager(provideName, cookieName string, maxLifeTime int64) (*Manager, error) {
-	provider, ok := provides[provideName]
-	if !ok {
-		return nil, fmt.Errorf("session: unknown provide %q (forgotten import?)", provideName)
-	}
-
-	return &Manager{provider: provider, cookieName: cookieName, maxLifeTime: maxLifeTime}, nil
 }
 
 type Provider interface {
@@ -84,11 +76,33 @@ func (manager *Manager) GC() {
 	defer manager.lock.Unlock()
 	manager.provider.SessionGC(manager.maxLifeTime)
 	time.AfterFunc(time.Duration(manager.maxLifeTime), func() { manager.GC() })
+	delete(managers, manager.cookieName)
 }
 
-var globalSessions *session.Manager
+var provides = make(map[string]Provider)
 
-func init() {
-	globalSessions, _ = NewManager("memory", "gosessionid", 3600)
-	go globalSessions.GC()
+func Register(prvdName string, prvd Provider) {
+	provides[prvdName] = prvd
+}
+
+var managers = make(map[string]*Manager)
+
+func NewManager(provideName, cookieName string, maxLifeTime int64) (*Manager, error) {
+	provider, ok := provides[provideName]
+	if !ok {
+		return nil, fmt.Errorf("session: unknown provide %q (forgotten import?)", provideName)
+	}
+
+	manager := &Manager{provider: provider, cookieName: cookieName, maxLifeTime: maxLifeTime}
+	managers[cookieName] = manager
+	go manager.GC()
+	return manager, nil
+}
+
+func GetManager(cookieName string) (*Manager, error) {
+	if m, ok := managers[cookieName]; ok {
+		return m, nil
+	} else {
+		return nil, errors.New("No such session!")
+	}
 }
