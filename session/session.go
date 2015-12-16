@@ -76,7 +76,6 @@ func (manager *Manager) GC() {
 	defer manager.lock.Unlock()
 	manager.provider.SessionGC(manager.maxLifeTime)
 	time.AfterFunc(time.Duration(manager.maxLifeTime), func() { manager.GC() })
-	delete(managers, manager.cookieName)
 }
 
 var provides = make(map[string]Provider)
@@ -84,8 +83,6 @@ var provides = make(map[string]Provider)
 func Register(prvdName string, prvd Provider) {
 	provides[prvdName] = prvd
 }
-
-var managers = make(map[string]*Manager)
 
 func NewManager(provideName, cookieName string, maxLifeTime int64) (*Manager, error) {
 	provider, ok := provides[provideName]
@@ -97,12 +94,4 @@ func NewManager(provideName, cookieName string, maxLifeTime int64) (*Manager, er
 	managers[cookieName] = manager
 	go manager.GC()
 	return manager, nil
-}
-
-func GetManager(cookieName string) (*Manager, error) {
-	if m, ok := managers[cookieName]; ok {
-		return m, nil
-	} else {
-		return nil, errors.New("No such session!")
-	}
 }
